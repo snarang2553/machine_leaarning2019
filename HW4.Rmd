@@ -1,0 +1,169 @@
+---
+title: "Machine Learning 2019: Feature Selection"
+author: "Sonali Narang"
+date: October 24, 2019
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Feature Selection 
+
+In machine learning, feature selection is the process of choosing variables that are useful in predicting the response variable. Selecting the right features in your data can mean the difference between mediocre performance with long training times and great performance with short training times that are less computationally intensive. 
+
+Often, data can contain attributes that are highly correlated with each other or not useful in helping predict our response variable. Many methods perform better if such variables are removed. Feature selection is usually imporant to implement during the data pre-processing steps of machine learning. 
+
+
+```{r load relevant libraries, include=FALSE}
+library(tidyverse)
+library(caret)
+library(randomForest)
+library(mlbench)
+library(glmnet)
+```
+
+## The Breast Cancer Dataset
+699 Observations, 11 variables
+Predictor Variable: Class- benign or malignant 
+
+```{r load Breast Cancer dataset}
+data(BreastCancer)
+head(BreastCancer)
+dim(BreastCancer)
+summary(BreastCancer$Class)
+```
+
+## Feature Selection Using Filter Methods: Pearson's Correlation 
+
+Filter Methods are generally used as a preprocessing step so the selection of features is independednt of any machine learning algorithms. Features are selected on the basis of their scores in various statistical tests for their correlation with the outcome variable. 
+
+Below we will identify attributes that are highly correlated using Pearson's correlation which is a measure for quantifying linear dependence between X and Y. Ranges between -1 and 1. 
+
+```{r correlation}
+BreastCancer_num = transform(BreastCancer, Id = as.numeric(Id), 
+                         Cl.thickness = as.numeric(Cl.thickness),
+                         Cell.size = as.numeric(Cell.size),
+                         Cell.shape = as.numeric(Cell.shape), 
+                         Marg.adhesion = as.numeric(Marg.adhesion),
+                         Epith.c.size = as.numeric(Epith.c.size),
+                         Bare.nuclei = as.numeric(Bare.nuclei), 
+                         Bl.cromatin = as.numeric(Bl.cromatin), 
+                         Normal.nucleoli = as.numeric(Normal.nucleoli),
+                         Mitoses = as.numeric(Mitoses))
+
+BreastCancer_num[is.na(BreastCancer_num)] = 0
+
+#calculate correlation matrix using pearson correlation (others include spearman and kendall)
+correlation_matrix = cor(BreastCancer_num[,1:10])
+
+#visualize correlation matrix
+library(corrplot)
+corrplot(correlation_matrix, order = "hclust")
+
+#apply correlation filter of 0.7
+highly_correlated <- colnames(BreastCancer[, -1])[findCorrelation(correlation_matrix, cutoff = 0.7, verbose = TRUE)]
+
+#which features are highly correlated and can be removed
+highly_correlated
+```
+## Feature Selection Using Wrapper Methods: Recursive Feature Elimination (RFE)
+
+Wrapper methods are a bit more computationally intensive since we will select features based on a specific machine learning algorith. 
+
+The RFE function implements backwards selection of predictors based on predictor importance ranking. The predictors are ranked and the less important ones are sequentially eliminated prior to modeling. The goal is to find a subset of predictors that can be used to produce an accurate model.
+
+```{r RFE}
+data(BreastCancer)
+BreastCancer_num = transform(BreastCancer, Id = as.numeric(Id), 
+                         Cl.thickness = as.numeric(Cl.thickness),
+                         Cell.size = as.numeric(Cell.size),
+                         Cell.shape = as.numeric(Cell.shape), 
+                         Marg.adhesion = as.numeric(Marg.adhesion),
+                         Epith.c.size = as.numeric(Epith.c.size),
+                         Bare.nuclei = as.numeric(Bare.nuclei), 
+                         Bl.cromatin = as.numeric(Bl.cromatin), 
+                         Normal.nucleoli = as.numeric(Normal.nucleoli),
+                         Mitoses = as.numeric(Mitoses))
+
+BreastCancer_num[is.na(BreastCancer_num)] = 0
+
+#define the control 
+control = rfeControl(functions = caretFuncs, number = 2)
+
+# run the RFE algorithm
+results = rfe(BreastCancer_num[,1:10], BreastCancer_num[,11], sizes = c(2,5,9), rfeControl = control, method = "svmRadial")
+
+results
+results$variables
+```
+
+## Feature Selection Using Embedded Methods: Lasso
+
+Least Absolute Shrinkage and Selection Operator (LASSO) regression
+
+
+```{r Lasso}
+set.seed(24)
+
+#convert data
+x = x <- as.matrix(BreastCancer_num[,1:10])
+y = as.double(as.matrix(ifelse(BreastCancer_num[,11]=='benign', 0, 1))) 
+
+#fit Lasso model 
+cv.lasso <- cv.glmnet(x, y, family='binomial', alpha=1, parallel=TRUE, standardize=TRUE, type.measure='auc')
+
+plot(cv.lasso)
+
+cat('Min Lambda: ', cv.lasso$lambda.min, '\n 1Sd Lambda: ', cv.lasso$lambda.1se)
+df_coef <- round(as.matrix(coef(cv.lasso, s=cv.lasso$lambda.min)), 2)
+
+# See all contributing variables
+df_coef[df_coef[, 1] != 0, ]
+```
+
+## Feature Selection Using Embedded Methods: RandomForest
+Random Forest Importance function and caret package's varImp functions perform similarly.
+
+```{r importance}
+#data
+data(BreastCancer)
+train_size <- floor(0.75 * nrow(BreastCancer))
+set.seed(24)
+train_pos <- sample(seq_len(nrow(BreastCancer)), size = train_size)
+
+#convert to numeric
+BreastCancer_num = transform(BreastCancer, Id = as.numeric(Id), 
+                         Cl.thickness = as.numeric(Cl.thickness),
+                         Cell.size = as.numeric(Cell.size),
+                         Cell.shape = as.numeric(Cell.shape), 
+                         Marg.adhesion = as.numeric(Marg.adhesion),
+                         Epith.c.size = as.numeric(Epith.c.size),
+                         Bare.nuclei = as.numeric(Bare.nuclei), 
+                         Bl.cromatin = as.numeric(Bl.cromatin), 
+                         Normal.nucleoli = as.numeric(Normal.nucleoli),
+                         Mitoses = as.numeric(Mitoses))
+
+BreastCancer_num[is.na(BreastCancer_num)] = 0
+
+train_classification <- BreastCancer_num[train_pos, ]
+test_classification <- BreastCancer_num[-train_pos, ]
+
+#fit a model
+rfmodel = randomForest(Class ~ Id + Cl.thickness + Cell.size + Cell.shape + Marg.adhesion + Epith.c.size + Bare.nuclei + Bl.cromatin + Normal.nucleoli +  Mitoses, data=train_classification,  importance = TRUE, oob.times = 15, confusion = TRUE)
+
+#rank features based on importance 
+importance(rfmodel)
+
+```
+
+
+
+## Homework
+
+1. Compare the most important features from at least 2 different classes of feature selection methods covered in this tutorial with any reasonable machine learning dataset from mlbench. Do these feature selection methods provide similar results? 
+
+2. Attempt a feature selection method not covered in this tutorial (backward elimination, forward propogation, etc.)
+
+
