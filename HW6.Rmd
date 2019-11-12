@@ -1,0 +1,110 @@
+---
+title: "Support Vector Machines(SVMs) Tutorial"
+author: "Sonali Narang"
+date: "11/12/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Support Vector Machines(SVMs)
+
+A Support Vector Machine (SVM) is a discriminative classifier formally defined by a separating hyperplane. Given labeled training data, the algorithm outputs an optimal hyperplane which categorizes new examples.
+
+```{r load relevant libraries, include=FALSE}
+library(tidyverse)
+library(mlbench)
+library(caret)
+library(pROC)
+```
+
+## The Breast Cancer Dataset
+699 Observations, 11 variables
+Predictor Variable: Class--benign or malignant 
+
+```{r}
+data(BreastCancer)
+
+#bc = BreastCancer %>% 
+#  mutate_if(is.character, as.numeric)
+#bc[is.na(bc)] = 0
+
+BreastCancer_num = transform(BreastCancer, Id = as.numeric(Id), 
+                         Cl.thickness = as.numeric(Cl.thickness),
+                         Cell.size = as.numeric(Cell.size),
+                         Cell.shape = as.numeric(Cell.shape), 
+                         Marg.adhesion = as.numeric(Marg.adhesion),
+                         Epith.c.size = as.numeric(Epith.c.size),
+                         Bare.nuclei = as.numeric(Bare.nuclei), 
+                         Bl.cromatin = as.numeric(Bl.cromatin), 
+                         Normal.nucleoli = as.numeric(Normal.nucleoli),
+                         Mitoses = as.numeric(Mitoses))
+
+BreastCancer_num[is.na(BreastCancer_num)] = 0
+
+train_size = floor(0.75 * nrow(BreastCancer_num))
+train_pos <- sample(seq_len(nrow(BreastCancer_num)), size = train_size)
+
+train_classification <- BreastCancer_num[train_pos, ]
+test_classification <- BreastCancer_num[-train_pos, ]
+
+```
+
+##SVM 
+
+```{r}
+set.seed(1112)
+control = trainControl(method = "repeatedcv", repeats = 5, classProbs = T, savePredictions = T)
+
+svm = train(Class ~ Id + Cl.thickness + Cell.size + Cell.shape + Marg.adhesion + Epith.c.size + Bare.nuclei + Bl.cromatin + Normal.nucleoli +  Mitoses,  data = train_classification, method = "svmLinear", tuneLength = 10, trControl = control)
+
+svm
+```
+##Receiver operating characteristic(ROC) curve
+
+```{r}
+roc(predictor = svm$pred$malignant, response = svm$pred$obs)$auc
+
+plot(x = roc(predictor = svm$pred$malignant, response = svm$pred$obs)$specificities, y = roc(predictor = svm$pred$malignant, response = svm$pred$obs)$sensitivities, col= "blue", xlim = c(1, 0), type ="l", ylab = "Sensitivity", xlab = "Specificity")
+
+```
+## Test Set 
+
+```{r}
+svm_test = predict(svm, newdata = test_classification)
+confusionMatrix(svm_test, reference = test_classification$Class)
+```
+## SVM with a radial kernel 
+
+```{r}
+set.seed(1112)
+control = trainControl(method = "repeatedcv", repeats = 5, classProbs = T, savePredictions = T)
+
+svm = train(Class ~ Id + Cl.thickness + Cell.size + Cell.shape + Marg.adhesion + Epith.c.size + Bare.nuclei + Bl.cromatin + Normal.nucleoli +  Mitoses,  data = train_classification, method = "svmRadial", tuneLength = 10, trControl = control)
+
+svm
+```
+
+##Receiver operating characteristic(ROC) curve
+
+```{r}
+roc(predictor = svm$pred$malignant, response = svm$pred$obs)$auc
+
+plot(x = roc(predictor = svm$pred$malignant, response = svm$pred$obs)$specificities, y = roc(predictor = svm$pred$malignant, response = svm$pred$obs)$sensitivities, col= "blue", xlim = c(1, 0), type ="l", ylab = "Sensitivity", xlab = "Specificity")
+
+```
+
+## Test Set 
+
+```{r}
+svm_test = predict(svm, newdata = test_classification)
+confusionMatrix(svm_test, reference = test_classification$Class)
+```
+
+##Homework
+
+1. Choose an appropriate machine learning dataset and use SVM with two different kernels. Campare the results. 
+
+2. Attempt using SVM after using a previously covered feature selection method. Do the results improve? Explain. 
